@@ -16,6 +16,7 @@ GROUP_ID = 54
 OJ_HOMEPAGE = "https://formosa.oj.cs.nycu.edu.tw/"
 SUBMISSIONS_PER_PAGE = 100
 PAGE_WAIT_SECONDS = 10
+LOGIN_WAIT_SECONDS = 30
 SCRIPT_DIR = Path(__file__).resolve().parent
 ENV_FILE = SCRIPT_DIR / ".env"
 LANGUAGE_EXTENSIONS = {
@@ -186,9 +187,21 @@ def handle_authorization(page):
     if not page_needs_authorization(page):
         return False
 
+    try:
+        page.get_by_role("button", name=re.compile(r"^Authorize$", re.I)).wait_for(
+            state="visible",
+            timeout=PAGE_WAIT_SECONDS * 1000,
+        )
+    except Exception:
+        pass
+
     if click_authorize_button(page):
         try:
-            page.wait_for_load_state("domcontentloaded", timeout=PAGE_WAIT_SECONDS * 1000)
+            page.wait_for_load_state("domcontentloaded", timeout=LOGIN_WAIT_SECONDS * 1000)
+        except PlaywrightTimeoutError:
+            pass
+        try:
+            page.wait_for_load_state("networkidle", timeout=LOGIN_WAIT_SECONDS * 1000)
         except PlaywrightTimeoutError:
             pass
         return True
@@ -374,9 +387,15 @@ def login_oj(page, max_attempts=3):
             except Exception:
                 pass
 
-        time.sleep(2)
-        if handle_authorization(page):
-            time.sleep(2)
+        login_deadline = time.time() + LOGIN_WAIT_SECONDS
+        while time.time() < login_deadline:
+            if handle_authorization(page):
+                continue
+            if not login_still_failed(page):
+                break
+            if page_shows_login_error(page):
+                break
+            page.wait_for_timeout(500)
 
         if login_still_failed(page):
             print(f"登入失敗，第 {attempt} 次嘗試：偵測到帳密錯誤訊息。")
@@ -387,7 +406,7 @@ def login_oj(page, max_attempts=3):
 
         page.goto(OJ_HOMEPAGE, wait_until="domcontentloaded")
         try:
-            page.wait_for_load_state("networkidle", timeout=PAGE_WAIT_SECONDS * 1000)
+            page.wait_for_load_state("networkidle", timeout=LOGIN_WAIT_SECONDS * 1000)
         except PlaywrightTimeoutError:
             pass
         if not login_still_failed(page):
