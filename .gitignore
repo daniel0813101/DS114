@@ -35,4 +35,10 @@
 *.out
 *.app
 
+# Local crawler credentials
+tools/.env
+
+# Student's Code
+score/
+
 # End of https://www.toptal.com/developers/gitignore/api/c++

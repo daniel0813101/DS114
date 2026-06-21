@@ -1,0 +1,12 @@
+[project]
+name = "ds114-tools"
+version = "0.1.0"
+description = "Crawler and scoring utilities for DS114"
+requires-python = ">=3.12"
+dependencies = [
+  "playwright",
+  "mosspy",
+]
+
+[tool.uv]
+package = false
