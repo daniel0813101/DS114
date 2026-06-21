@@ -7,6 +7,11 @@ CRAWLER="$ROOT_DIR/tools/crawler.py"
 SUMMARIZER="$ROOT_DIR/tools/summarize_hw_scores.py"
 SCORE_ROOT="$ROOT_DIR/score"
 STUDENTS_FILE="$ROOT_DIR/tools/students.csv"
+HEADLESS=1
+
+if [ "${1:-}" = "--headed" ]; then
+  HEADLESS=0
+fi
 
 run_one() {
   local hw_name="$1"
@@ -16,11 +21,20 @@ run_one() {
 
   mkdir -p "$output_dir"
   echo "Running $hw_name problem $problem_id -> $output_dir"
-  uv run python "$CRAWLER" \
-    --problem-id "$problem_id" \
-    --deadline "$deadline" \
-    --report-folder "$output_dir" \
-    --students-file "$STUDENTS_FILE"
+  if [ "$HEADLESS" -eq 0 ]; then
+    uv run python "$CRAWLER" \
+      --problem-id "$problem_id" \
+      --deadline "$deadline" \
+      --report-folder "$output_dir" \
+      --students-file "$STUDENTS_FILE" \
+      --headed
+  else
+    uv run python "$CRAWLER" \
+      --problem-id "$problem_id" \
+      --deadline "$deadline" \
+      --report-folder "$output_dir" \
+      --students-file "$STUDENTS_FILE"
+  fi
 }
 
 summarize_hw() {
