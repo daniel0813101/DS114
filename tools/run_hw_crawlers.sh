@@ -16,7 +16,7 @@ run_one() {
 
   mkdir -p "$output_dir"
   echo "Running $hw_name problem $problem_id -> $output_dir"
-  python3 "$CRAWLER" \
+  uv run python "$CRAWLER" \
     --problem-id "$problem_id" \
     --deadline "$deadline" \
     --report-folder "$output_dir" \
@@ -28,7 +28,7 @@ summarize_hw() {
   local hw_dir="$SCORE_ROOT/$hw_name"
 
   if [ -d "$hw_dir" ]; then
-    python3 "$SUMMARIZER" --hw-dir "$hw_dir"
+    uv run python "$SUMMARIZER" --hw-dir "$hw_dir"
   fi
 }
 
@@ -72,6 +72,6 @@ run_one "Final" "2162" "2026-06-12_16:20:00"
 run_one "Final" "2394" "2026-06-12_16:20:00"
 summarize_hw "Final"
 
-python3 "$SUMMARIZER" --score-root "$SCORE_ROOT" --all
+uv run python "$SUMMARIZER" --score-root "$SCORE_ROOT" --all
 
 echo "Done"
