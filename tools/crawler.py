@@ -112,8 +112,21 @@ def normalize_text(text):
     return re.sub(r"\s+", " ", text or "").strip().lower()
 
 
+def safe_page_text(page):
+    parts = []
+    try:
+        parts.append(page.title() or "")
+    except Exception:
+        pass
+    try:
+        parts.append(page.locator("body").inner_text() or "")
+    except Exception:
+        pass
+    return normalize_text(" ".join(parts))
+
+
 def page_shows_login_choices(page):
-    page_text = normalize_text(page.title() + " " + page.content())
+    page_text = safe_page_text(page)
     return ("google" in page_text and "nycu" in page_text) or "choose google" in page_text
 
 
@@ -128,7 +141,7 @@ def page_shows_login_error(page):
             return True
     except Exception:
         pass
-    page_text = normalize_text(page.content())
+    page_text = safe_page_text(page)
     return bool(error_pattern.search(page_text))
 
 
@@ -155,7 +168,7 @@ def login_still_failed(page):
 
 
 def page_needs_authorization(page):
-    page_text = normalize_text(page.title() + " " + page.content())
+    page_text = safe_page_text(page)
     return "authorize nctu online judge" in page_text or "authorizing will redirect" in page_text
 
 
