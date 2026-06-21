@@ -158,13 +158,16 @@ def login_still_failed(page):
     except Exception:
         pass
 
-    try:
-        if page.locator("input[type='password']").count() > 0:
-            return True
-    except Exception:
-        pass
-
     return False
+
+
+def wait_for_password_form_to_disappear(page, timeout_ms):
+    password_locator = page.locator("input[type='password']").first
+    try:
+        password_locator.wait_for(state="detached", timeout=timeout_ms)
+        return True
+    except PlaywrightTimeoutError:
+        return False
 
 
 def page_needs_authorization(page):
@@ -404,13 +407,13 @@ def login_oj(page, max_attempts=3):
         while time.time() < login_deadline:
             if handle_authorization(page):
                 continue
-            if not login_still_failed(page):
+            if wait_for_password_form_to_disappear(page, 500):
                 break
             if page_shows_login_error(page):
                 break
             page.wait_for_timeout(500)
 
-        if login_still_failed(page):
+        if not wait_for_password_form_to_disappear(page, 1000):
             print(f"登入失敗，第 {attempt} 次嘗試：偵測到帳密錯誤訊息。")
             if attempt == max_attempts:
                 break
