@@ -50,10 +50,30 @@ def summarize_hw(hw_dir):
 
 def summarize_all_hw(score_root):
     hw_score_files = sorted(score_root.glob("*/score.csv"))
-    totals = defaultdict(lambda: {"name": "", "student_id": "", "score": 0, "handin_time": ""})
+    hw_columns = [
+        ("HW_1", "HW1"),
+        ("HW_2", "HW2"),
+        ("HW_3", "HW3"),
+        ("HW_4", "HW4"),
+        ("HW_5", "HW5"),
+        ("Midterm", "Midterm"),
+        ("HW_6", "HW6"),
+        ("HW_7", "HW7"),
+        ("HW_8", "HW8"),
+        ("HW_9", "HW9"),
+        ("Final", "Final"),
+    ]
+    hw_name_to_column = dict(hw_columns)
+    output_columns = [column for _, column in hw_columns]
+    totals = defaultdict(lambda: {"name": "", "student_id": "", "scores": {}})
 
     for score_file in hw_score_files:
         if score_file.parent == score_root:
+            continue
+
+        hw_name = score_file.parent.name
+        column_name = hw_name_to_column.get(hw_name)
+        if column_name is None:
             continue
 
         with score_file.open("r", encoding="utf-8-sig", newline="") as f:
@@ -76,16 +96,23 @@ def summarize_all_hw(score_root):
                 if not record["name"]:
                     record["name"] = name
                 record["student_id"] = student_id
-                record["score"] += score
-                if handin_time and handin_time > record["handin_time"]:
-                    record["handin_time"] = handin_time
+                record["scores"][column_name] = score
 
     output_path = score_root / "all_hw_score.csv"
     with output_path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["name", "student_id", "score", "handin_time"])
+        fieldnames = ["name", "student_id", *output_columns]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for student_id in sorted(totals.keys()):
-            writer.writerow(totals[student_id])
+            record = totals[student_id]
+            row = {
+                "name": record["name"],
+                "student_id": record["student_id"],
+            }
+            scores = record.get("scores", {})
+            for column_name in output_columns:
+                row[column_name] = scores.get(column_name, 0)
+            writer.writerow(row)
 
     return output_path, len(hw_score_files), len(totals)
 
