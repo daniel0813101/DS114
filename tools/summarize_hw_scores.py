@@ -11,7 +11,15 @@ def parse_handin_time(value):
 
 def summarize_hw(hw_dir):
     problem_score_files = sorted(hw_dir.glob("*/score.csv"))
-    totals = defaultdict(lambda: {"name": "", "student_id": "", "score": 0, "handin_time": ""})
+    totals = defaultdict(
+        lambda: {
+            "name": "",
+            "student_id": "",
+            "score": 0,
+            "handin_time": "",
+            "late_discounted": "N",
+        }
+    )
 
     for score_file in problem_score_files:
         with score_file.open("r", encoding="utf-8-sig", newline="") as f:
@@ -24,6 +32,7 @@ def summarize_hw(hw_dir):
                 name = (row.get("name") or "").strip()
                 score_text = (row.get("score") or "0").strip()
                 handin_time = parse_handin_time(row.get("handin_time") or "")
+                late_discounted = (row.get("late_discounted") or "N").strip().upper()
 
                 try:
                     score = int(float(score_text))
@@ -37,10 +46,15 @@ def summarize_hw(hw_dir):
                 record["score"] += score
                 if handin_time and handin_time > record["handin_time"]:
                     record["handin_time"] = handin_time
+                if late_discounted in {"Y", "YES", "TRUE", "1"}:
+                    record["late_discounted"] = "Y"
 
     output_path = hw_dir / "score.csv"
     with output_path.open("w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["name", "student_id", "score", "handin_time"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["name", "student_id", "score", "handin_time", "late_discounted"],
+        )
         writer.writeheader()
         for student_id in sorted(totals.keys()):
             writer.writerow(totals[student_id])

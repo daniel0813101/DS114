@@ -555,13 +555,41 @@ def format_handin_time(target_time, deadline_tz):
     return target_time.astimezone(deadline_tz).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
-def write_score_row(writer, name, student_id, score, handin_time=""):
+def apply_late_discount(score):
+    return max(0, int(score * 0.8))
+
+
+def write_score_row(writer, name, student_id, score, handin_time="", late_discounted="N"):
     writer.writerow({
         "name": name,
         "student_id": student_id,
         "score": score,
         "handin_time": handin_time,
+        "late_discounted": late_discounted,
     })
+
+
+def update_best_submission(best, score, sub_time, submission_url, is_late):
+    candidate = {
+        "score": score,
+        "time": sub_time,
+        "url": submission_url,
+        "late": is_late,
+    }
+
+    if best is None:
+        return candidate
+
+    if best["late"] != candidate["late"]:
+        return candidate if not candidate["late"] else best
+
+    if candidate["score"] > best["score"]:
+        return candidate
+
+    if candidate["score"] == best["score"] and candidate["time"] < best["time"]:
+        return candidate
+
+    return best
 
 
 def main(args):
@@ -610,7 +638,10 @@ def main(args):
             login_oj(page)
 
             with open(os.path.join(report_folder, "score.csv"), "w", encoding="utf-8-sig", newline="") as score_f:
-                score_writer = csv.DictWriter(score_f, fieldnames=["name", "student_id", "score", "handin_time"])
+                score_writer = csv.DictWriter(
+                    score_f,
+                    fieldnames=["name", "student_id", "score", "handin_time", "late_discounted"],
+                )
                 score_writer.writeheader()
 
                 for student in students:
@@ -618,9 +649,8 @@ def main(args):
                     student_id_num = student["student_id"]
                     oj_id = student["oj_id"]
 
-                    target_score = None
-                    target_url = None
-                    target_time = None
+                    best_on_time = None
+                    best_late = None
                     reached_last_page = False
 
                     for page_num in range(1, args.max_pages + 1):
@@ -647,38 +677,71 @@ def main(args):
                                 print(f"[{oj_id}] 無法解析時間: {e}")
                                 continue
 
+                            try:
+                                score_text = row.query_selector("td:nth-of-type(9)").inner_text().strip()
+                                score = parse_score(score_text)
+                                link_element = row.query_selector("td:nth-of-type(1) a")
+                                submission_url = link_element.get_attribute("href")
+                            except Exception as e:
+                                print(f"[{oj_id}] 無法解析繳交資料: {e}")
+                                continue
+
                             if sub_time <= deadline:
-                                try:
-                                    score_text = row.query_selector("td:nth-of-type(9)").inner_text().strip()
-                                    score = parse_score(score_text)
-                                    link_element = row.query_selector("td:nth-of-type(1) a")
-                                    submission_url = link_element.get_attribute("href")
-                                except Exception as e:
-                                    print(f"[{oj_id}] 無法解析繳交資料: {e}")
-                                    continue
+                                best_on_time = update_best_submission(
+                                    best_on_time,
+                                    score,
+                                    sub_time,
+                                    submission_url,
+                                    is_late=False,
+                                )
+                            else:
+                                best_late = update_best_submission(
+                                    best_late,
+                                    score,
+                                    sub_time,
+                                    submission_url,
+                                    is_late=True,
+                                )
 
-                                if target_score is None or score > target_score:
-                                    target_score = score
-                                    target_url = submission_url
-                                    target_time = sub_time
-
-                        if target_score == 100 or len(rows) < SUBMISSIONS_PER_PAGE:
+                        current_best = best_on_time if best_on_time is not None else best_late
+                        if current_best is not None and current_best["score"] == 100:
+                            reached_last_page = True
+                            break
+                        if len(rows) < SUBMISSIONS_PER_PAGE:
                             reached_last_page = True
                             break
 
                     if not reached_last_page:
                         print(f"[{oj_id}] 警告：已掃描 {args.max_pages} 頁，可能還有更早的繳交未檢查。")
 
-                    if target_score is None:
+                    chosen = best_on_time if best_on_time is not None else best_late
+
+                    if chosen is None:
                         print(f"[{oj_id}] 沒有在 deadline 前繳交。")
-                        write_score_row(score_writer, name, student_id_num, 0)
+                        write_score_row(score_writer, name, student_id_num, 0, late_discounted="N")
                         continue
+
+                    target_score = chosen["score"]
+                    target_url = chosen["url"]
+                    target_time = chosen["time"]
+                    late_discounted = "N"
+                    if chosen["late"]:
+                        target_score = apply_late_discount(target_score)
+                        late_discounted = "Y"
+                        print(f"[{oj_id}] 僅找到逾期繳交，套用 0.8 折算後分數。")
 
                     target_time_str = format_handin_time(target_time, deadline_tz)
 
                     if target_score == 0:
                         print(f"[{oj_id}] deadline 前最高分為0，不下載程式碼。")
-                        write_score_row(score_writer, name, student_id_num, 0, target_time_str)
+                        write_score_row(
+                            score_writer,
+                            name,
+                            student_id_num,
+                            0,
+                            target_time_str,
+                            late_discounted=late_discounted,
+                        )
                         continue
 
                     page.goto(resolve_url(target_url), wait_until="domcontentloaded")
@@ -696,7 +759,14 @@ def main(args):
                     code_text = extract_code(page)
                     if not code_text:
                         print(f"[{oj_id}] 找不到程式碼按鈕。")
-                        write_score_row(score_writer, name, student_id_num, target_score, target_time_str)
+                        write_score_row(
+                            score_writer,
+                            name,
+                            student_id_num,
+                            target_score,
+                            target_time_str,
+                            late_discounted=late_discounted,
+                        )
                         continue
 
                     filename = f"{name}_{student_id_num}{ext}"
@@ -705,8 +775,16 @@ def main(args):
                     with open(save_path, "w", encoding="utf-8", newline="") as f:
                         f.write(code_text)
 
-                    print(f"[{oj_id}] 已下載程式碼 -> {save_path} (語言: {language}, 分數: {target_score}, 繳交: {target_time_str})")
-                    write_score_row(score_writer, name, student_id_num, target_score, target_time_str)
+                    late_note = "，逾期折算" if late_discounted == "Y" else ""
+                    print(f"[{oj_id}] 已下載程式碼 -> {save_path} (語言: {language}, 分數: {target_score}{late_note}, 繳交: {target_time_str})")
+                    write_score_row(
+                        score_writer,
+                        name,
+                        student_id_num,
+                        target_score,
+                        target_time_str,
+                        late_discounted=late_discounted,
+                    )
         finally:
             context.close()
             browser.close()
